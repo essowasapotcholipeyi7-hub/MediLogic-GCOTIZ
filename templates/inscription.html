@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediLogic-GCOTIZ - Inscription</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb4d);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+        }
+        .card {
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .btn-inscrire {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            border: none;
+        }
+        .btn-inscrire:hover {
+            transform: scale(1.02);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white text-center">
+                        <h3><i class="fas fa-user-plus"></i> MediLogic-GCOTIZ</h3>
+                        <p>Inscription à la mutuelle familiale</p>
+                    </div>
+                    <div class="card-body">
+                        <div id="message"></div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">👤 Nom complet</label>
+                            <input type="text" id="nom" class="form-control" placeholder="Ex: Jean KOFFI">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">📱 Téléphone (WhatsApp)</label>
+                            <input type="tel" id="telephone" class="form-control" placeholder="Ex: 90123456 ou +22890123456">
+                            <small class="text-muted">Nous vous enverrons les rappels sur ce numéro</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">💼 Statut</label>
+                            <select id="statut" class="form-select">
+                                <option value="travailleur">👔 Travailleur - 1000 FCFA/mois</option>
+                                <option value="non_travailleur">🏠 Non travailleur - 500 FCFA/mois</option>
+                            </select>
+                        </div>
+                        
+                        <button class="btn btn-success w-100 btn-inscrire" onclick="inscrire()">
+                            <i class="fas fa-check-circle"></i> S'inscrire
+                        </button>
+                        
+                        <hr>
+                        <p class="text-center text-muted small mt-3">
+                            Après inscription, vous recevrez un message WhatsApp de confirmation.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function inscrire() {
+            let nom = document.getElementById('nom').value;
+            let telephone = document.getElementById('telephone').value;
+            let statut = document.getElementById('statut').value;
+            
+            if(!nom || !telephone) {
+                document.getElementById('message').innerHTML = 
+                    '<div class="alert alert-danger">❌ Veuillez remplir tous les champs</div>';
+                return;
+            }
+            
+            document.getElementById('message').innerHTML = 
+                '<div class="alert alert-info">⏳ Enregistrement en cours...</div>';
+            
+            fetch('/api/membres', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({nom, telephone, statut})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    // Envoyer WhatsApp de confirmation
+                    let tel = telephone.replace(/\s/g, '').replace(/^0/, '228').replace('+', '');
+                    let message = `Bonjour ${nom}, bienvenue à MediLogic-GCOTIZ ! Votre cotisation mensuelle est de ${data.membre.montant_mensuel} FCFA. Merci de régulariser votre premier paiement.`;
+                    let waUrl = `https://wa.me/${tel}?text=${encodeURIComponent(message)}`;
+                    
+                    document.getElementById('message').innerHTML = 
+                        '<div class="alert alert-success">✅ Inscription réussie ! Redirection vers WhatsApp...</div>';
+                    
+                    setTimeout(() => {
+                        window.open(waUrl, '_blank');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 2000);
+                    }, 1000);
+                } else {
+                    document.getElementById('message').innerHTML = 
+                        '<div class="alert alert-danger">❌ Erreur lors de l\'inscription</div>';
+                }
+            })
+            .catch(err => {
+                document.getElementById('message').innerHTML = 
+                    '<div class="alert alert-danger">❌ Erreur: ' + err + '</div>';
+            });
+        }
+    </script>
+</body>
+</html>

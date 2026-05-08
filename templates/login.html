@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediLogic-GCOTIZ - Connexion</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb4d);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+        }
+        .card { border-radius: 20px; }
+        .nav-tabs .nav-link { color: #495057; }
+        .nav-tabs .nav-link.active { background: #007bff; color: white; border: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-5">
+                <div class="card">
+                    <div class="card-header bg-primary text-white text-center">
+                        <h3><i class="fas fa-sign-in-alt"></i> MediLogic-GCOTIZ</h3>
+                        <p>Accès à la plateforme</p>
+                    </div>
+                    <div class="card-body">
+                        <ul class="nav nav-tabs mb-3" id="loginTab">
+                            <li class="nav-item">
+                                <a class="nav-link active" data-tab="admin">👑 Administrateur</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" data-tab="membre">👤 Membre</a>
+                            </li>
+                        </ul>
+                        
+                        <div id="message"></div>
+                        
+                        <!-- Formulaire Admin -->
+                        <div id="formAdmin">
+                            <div class="mb-3">
+                                <label class="form-label">👨‍💼 Identifiant</label>
+                                <input type="text" id="adminUsername" class="form-control" placeholder="a....">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">🔒 Mot de passe</label>
+                                <input type="password" id="adminPassword" class="form-control" placeholder=".....">
+                            </div>
+                            <button class="btn btn-primary w-100" onclick="connexionAdmin()">
+                                <i class="fas fa-key"></i> Se connecter (Admin)
+                            </button>
+                        </div>
+                        
+                        <!-- Formulaire Membre -->
+                        <div id="formMembre" style="display: none;">
+                            <div class="mb-3">
+                                <label class="form-label">📱 Numéro WhatsApp</label>
+                                <input type="tel" id="membreTelephone" class="form-control" placeholder="Ex: 90123456">
+                            </div>
+                            <button class="btn btn-success w-100" onclick="connexionMembre()">
+                                <i class="fas fa-arrow-right"></i> Se connecter (Membre)
+                            </button>
+                        </div>
+                        
+                        <hr>
+                        <p class="text-center">
+                            <a href="/inscription">Pas encore membre ? S'inscrire</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Changer entre onglets
+        document.querySelectorAll('.nav-link').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                
+                let type = this.getAttribute('data-tab');
+                if(type === 'admin') {
+                    document.getElementById('formAdmin').style.display = 'block';
+                    document.getElementById('formMembre').style.display = 'none';
+                } else {
+                    document.getElementById('formAdmin').style.display = 'none';
+                    document.getElementById('formMembre').style.display = 'block';
+                }
+            });
+        });
+        
+        function connexionAdmin() {
+            let username = document.getElementById('adminUsername').value;
+            let password = document.getElementById('adminPassword').value;
+            
+            if(!username || !password) {
+                document.getElementById('message').innerHTML = '<div class="alert alert-danger">❌ Entrez identifiant et mot de passe</div>';
+                return;
+            }
+            
+            fetch('/api/admin/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: username, password: password})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    document.getElementById('message').innerHTML = '<div class="alert alert-success">✅ Bienvenue Admin ! Redirection...</div>';
+                    setTimeout(() => window.location.href = '/', 1000);
+                } else {
+                    document.getElementById('message').innerHTML = '<div class="alert alert-danger">❌ Identifiants incorrects</div>';
+                }
+            });
+        }
+        
+        function connexionMembre() {
+            let telephone = document.getElementById('membreTelephone').value;
+            
+            if(!telephone) {
+                document.getElementById('message').innerHTML = '<div class="alert alert-danger">❌ Entrez votre numéro</div>';
+                return;
+            }
+            
+            fetch('/api/membre/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({telephone: telephone})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    document.getElementById('message').innerHTML = '<div class="alert alert-success">✅ Bienvenue ' + data.nom + ' ! Redirection...</div>';
+                    setTimeout(() => window.location.href = '/', 1000);
+                } else {
+                    document.getElementById('message').innerHTML = '<div class="alert alert-danger">❌ Numéro non trouvé</div>';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from flask_cors import CORS
 from datetime import datetime
 import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg2.extras
 from dotenv import load_dotenv
 import hashlib
 

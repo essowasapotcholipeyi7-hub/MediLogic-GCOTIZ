@@ -104,46 +104,52 @@
     </div>
     
     <script>
-        function chargerDashboard() {
-            fetch('/api/stats')
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('totalMembres').innerText = data.total_membres;
-                    document.getElementById('tauxRecouvrement').innerText = data.taux_recouvrement + '%';
-                    document.getElementById('soldeCaisse').innerText = data.solde_caisse + ' FCFA';
-                    document.getElementById('enRetard').innerText = data.en_retard;
-                })
-                .catch(err => console.error(err));
-            
-            fetch('/api/membres/retard')
-                .then(res => res.json())
-                .then(data => {
-                    let html = '';
-                    if (data.length === 0) {
-                        html = '<div class="alert alert-success">✅ Tous les membres sont à jour !</div>';
-                    } else {
-                        html = '<div class="list-group">';
-                        data.forEach(m => {
-                            let tel = String(m.telephone).replace(/\\s/g, '').replace(/^0/, '228').replace('+', '');
-                            let waUrl = `https://wa.me/${tel}?text=Bonjour ${m.nom}, votre cotisation n'a pas été payée. Montant: ${m.montant_mensuel} FCFA.`;
-                            html += `
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <strong>${m.nom}</strong>
-                                        <span class="badge bg-danger ms-2">${m.montant_mensuel} FCFA</span>
-                                    </div>
-                                    <a href="${waUrl}" target="_blank" class="btn btn-wa btn-sm">
-                                        <i class="fab fa-whatsapp"></i> WhatsApp
-                                    </a>
+function chargerDashboard() {
+    fetch('/api/stats')
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('totalMembres').innerText = data.total_membres;
+            document.getElementById('tauxRecouvrement').innerText = data.taux_recouvrement + '%';
+            document.getElementById('soldeCaisse').innerText = data.solde_caisse + ' FCFA';
+            document.getElementById('enRetard').innerText = data.en_retard;
+        })
+        .catch(err => console.error(err));
+    
+    fetch('/api/membres/retard')
+        .then(res => res.json())
+        .then(data => {
+            let html = '';
+            if (data.length === 0) {
+                html = '<div class="alert alert-success">✅ Tous les membres sont à jour !</div>';
+            } else {
+                html = '<div class="list-group">';
+                data.forEach(m => {
+                    let tel = String(m.telephone).replace(/\s/g, '').replace(/^0/, '228').replace('+', '');
+                    let message = `Bonjour ${m.nom}, vous avez ${m.mois_retard} mois de retard (${m.dette_totale} FCFA). Veuillez régulariser. MediLogic-GCOTIZ`;
+                    let waUrl = `https://wa.me/${tel}?text=${encodeURIComponent(message)}`;
+                    
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>${m.nom}</strong>
+                                    <span class="badge bg-danger ms-2">${m.mois_retard} mois ⏰</span>
+                                    <span class="badge bg-warning ms-2">${m.dette_totale} FCFA</span>
                                 </div>
-                            `;
-                        });
-                        html += '</div>';
-                    }
-                    document.getElementById('retardList').innerHTML = html;
-                })
-                .catch(err => console.error(err));
-        }
+                                <a href="${waUrl}" target="_blank" class="btn btn-wa btn-sm">
+                                    <i class="fab fa-whatsapp"></i> Rappel
+                                </a>
+                            </div>
+                            <small class="text-muted">Dette totale : ${m.dette_totale} FCFA (${m.mois_retard} mois)</small>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+            document.getElementById('retardList').innerHTML = html;
+        })
+        .catch(err => console.error(err));
+}
         
         function horloge() {
             let now = new Date();

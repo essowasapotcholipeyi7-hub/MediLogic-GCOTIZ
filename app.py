@@ -18,6 +18,7 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 def get_db():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
+
 # ==================== PAGES ====================
 @app.route('/')
 def index():
@@ -350,17 +351,25 @@ def get_stats():
 def get_retard():
     conn = get_db()
     cur = conn.cursor()
-    
-    if session.get('user_role') == 'membre':
-        # Un membre voit juste "toi-même"
-        cur.execute("SELECT id, nom, telephone, montant_mensuel FROM membres WHERE id = %s AND statut_cotisation = 'En retard'", (session['user_id'],))
-    else:
-        cur.execute("SELECT id, nom, telephone, montant_mensuel FROM membres WHERE statut_cotisation = 'En retard'")
-    
-    retard = cur.fetchall()
+    cur.execute("SELECT id, nom, telephone, montant_mensuel, statut_cotisation FROM membres")
+    membres = cur.fetchall()
     cur.close()
     conn.close()
-    return jsonify(retard)
+    
+    resultat = []
+    for m in membres:
+        retard = calculer_retards_membre(m['id'])
+        if retard['nombre_mois'] > 0:
+            resultat.append({
+                'id': m['id'],
+                'nom': m['nom'],
+                'telephone': m['telephone'],
+                'montant_mensuel': m['montant_mensuel'],
+                'mois_retard': retard['nombre_mois'],
+                'dette_totale': retard['dette_totale']
+            })
+    
+    return jsonify(resultat)
 
 @app.route('/api/admin/login', methods=['POST'])
 def api_admin_login():
@@ -404,6 +413,64 @@ def api_membre_login():
         return jsonify({'success': True, 'nom': membre['nom']})
     else:
         return jsonify({'success': False, 'message': 'Numéro non trouvé'})
+
+# ==================== FONCTION CALCUL RETARDS ====================
+def calculer_retards_membre(id_membre):
+    """Calcule les mois de retard pour un membre"""
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT id, nom, montant_mensuel FROM membres WHERE id = %s", (id_membre,))
+    membre = cur.fetchone()
+    
+    if not membre:
+        return {'nombre_mois': 0, 'dette_totale': 0}
+    
+    # Récupérer les mois déjà payés (en utilisant la colonne 'mois')
+    cur.execute("""
+        SELECT DISTINCT annee, mois
+        FROM cotisations 
+        WHERE id_membre = %s
+    """, (id_membre,))
+    
+    mois_payes = []
+    mois_numeros = {
+        'Janvier': 1, 'Février': 2, 'Mars': 3, 'Avril': 4,
+        'Mai': 5, 'Juin': 6, 'Juillet': 7, 'Août': 8,
+        'Septembre': 9, 'Octobre': 10, 'Novembre': 11, 'Décembre': 12
+    }
+    
+    for row in cur.fetchall():
+        mois_num = mois_numeros.get(row['mois'], 0)
+        if mois_num > 0:
+            mois_payes.append(f"{row['annee']}-{mois_num:02d}")
+    
+    cur.close()
+    conn.close()
+    
+    aujourd_hui = datetime.now()
+    annee_courante = aujourd_hui.year
+    mois_courant = aujourd_hui.month
+    jour_courant = aujourd_hui.day
+    
+    mois_impayes = []
+    
+    for mois in range(1, mois_courant + 1):
+        mois_annee = f"{annee_courante}-{mois:02d}"
+        
+        if mois_annee in mois_payes:
+            continue
+        
+        if mois == mois_courant:
+            if jour_courant > 5:
+                mois_impayes.append({'mois_annee': mois_annee, 'montant': membre['montant_mensuel']})
+        else:
+            mois_impayes.append({'mois_annee': mois_annee, 'montant': membre['montant_mensuel']})
+    
+    dette_totale = sum(m['montant'] for m in mois_impayes)
+    nombre_mois = len(mois_impayes)
+    
+    return {'nombre_mois': nombre_mois, 'dette_totale': dette_totale}
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

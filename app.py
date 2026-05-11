@@ -18,6 +18,8 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 def get_db():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
+def get_annee_courante():
+    return datetime.now().year
 
 # ==================== PAGES ====================
 @app.route('/')
@@ -120,6 +122,7 @@ def add_membre():
             return inscrire_membre_public(request.json)
         return jsonify({'success': False, 'message': 'Permission refusée'}), 403
     
+    annee = datetime.now().year
     data = request.json
     montant = 1000 if data['statut'] == 'travailleur' else 500
     
@@ -127,29 +130,48 @@ def add_membre():
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO membres (nom, telephone, statut, montant_mensuel, role)
-        VALUES (%s, %s, %s, %s, 'membre') RETURNING *
+        VALUES (%s, %s, %s, %s, 'membre') RETURNING id
     """, (data['nom'], data['telephone'], data['statut'], montant))
     membre = cur.fetchone()
+    membre_id = membre['id']
+    
+    # Ajouter le nouveau membre dans fete_cotisation pour l'année en cours
+    cur.execute("""
+        INSERT INTO fete_cotisation (id_membre, annee, montant_total_du, montant_paye, montant_restant, statut)
+        VALUES (%s, %s, 5000, 0, 5000, 'impayé')
+        ON CONFLICT (id_membre, annee) DO NOTHING
+    """, (membre_id, annee))
+    
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({'success': True, 'membre': membre})
+    return jsonify({'success': True, 'message': f'Membre {data["nom"]} ajouté'})
 
 def inscrire_membre_public(data):
     """Inscription publique sans authentification"""
+    annee = datetime.now().year
     montant = 1000 if data['statut'] == 'travailleur' else 500
     
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO membres (nom, telephone, statut, montant_mensuel, role, statut_cotisation)
-        VALUES (%s, %s, %s, %s, 'membre', 'En retard') RETURNING *
+        VALUES (%s, %s, %s, %s, 'membre', 'En retard') RETURNING id
     """, (data['nom'], data['telephone'], data['statut'], montant))
     membre = cur.fetchone()
+    membre_id = membre['id']
+    
+    # Ajouter le nouveau membre dans fete_cotisation pour l'année en cours
+    cur.execute("""
+        INSERT INTO fete_cotisation (id_membre, annee, montant_total_du, montant_paye, montant_restant, statut)
+        VALUES (%s, %s, 5000, 0, 5000, 'impayé')
+        ON CONFLICT (id_membre, annee) DO NOTHING
+    """, (membre_id, annee))
+    
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({'success': True, 'membre': membre})
+    return jsonify({'success': True, 'message': f'Membre {data["nom"]} inscrit'})
 
 @app.route('/api/membres/<int:id>', methods=['DELETE'])
 def delete_membre(id):
@@ -158,11 +180,22 @@ def delete_membre(id):
     
     conn = get_db()
     cur = conn.cursor()
-    cur.execute('DELETE FROM membres WHERE id = %s', (id,))
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({'success': True})
+    
+    try:
+        # Supprimer dans l'ordre pour éviter les erreurs de clé étrangère
+        cur.execute("DELETE FROM fete_cotisation WHERE id_membre = %s", (id,))
+        cur.execute("DELETE FROM cotisations WHERE id_membre = %s", (id,))
+        cur.execute("DELETE FROM caisse WHERE source = %s", (str(id),))
+        cur.execute("DELETE FROM fete_caisse WHERE id_membre = %s", (id,))
+        cur.execute("DELETE FROM membres WHERE id = %s", (id,))
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        cur.close()
+        conn.close()
 
 # ==================== API COTISATIONS ====================
 @app.route('/api/cotisations', methods=['POST'])
@@ -471,6 +504,161 @@ def calculer_retards_membre(id_membre):
     nombre_mois = len(mois_impayes)
     
     return {'nombre_mois': nombre_mois, 'dette_totale': dette_totale}
+
+# ==================== FÊTE DE FIN D'ANNÉE ====================
+
+@app.route('/fete')
+def fete_page():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('fete.html')
+
+@app.route('/api/fete/stats', methods=['GET'])
+def api_fete_stats():
+    annee = datetime.now().year
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT COUNT(*) as total FROM membres")
+    total_membres = cur.fetchone()['total']
+    objectif_total = total_membres * 5000
+    
+    cur.execute("SELECT COALESCE(SUM(montant_paye), 0) as total FROM fete_cotisation WHERE annee = %s", (annee,))
+    total_collecte = cur.fetchone()['total']
+    
+    cur.execute("SELECT COUNT(*) as count FROM fete_cotisation WHERE annee = %s AND montant_paye > 0", (annee,))
+    participants = cur.fetchone()['count']
+    taux = round((participants / total_membres * 100), 1) if total_membres > 0 else 0
+    
+    cur.execute("SELECT COALESCE(solde, 0) as solde FROM fete_solde ORDER BY id DESC LIMIT 1")
+    solde = cur.fetchone()
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify({
+        'objectif_total': objectif_total,
+        'total_collecte': total_collecte,
+        'taux_participation': taux,
+        'solde_caisse': solde['solde'] if solde else 0,
+        'annee': annee
+    })
+@app.route('/api/fete/membres', methods=['GET'])
+def api_fete_membres():
+    annee = datetime.now().year
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT m.id, m.nom, m.telephone, 
+               COALESCE(f.montant_paye, 0) as montant_paye,
+               COALESCE(f.montant_restant, 5000) as montant_restant,
+               COALESCE(f.statut, 'impayé') as statut
+        FROM membres m
+        LEFT JOIN fete_cotisation f ON m.id = f.id_membre AND f.annee = %s
+        ORDER BY m.nom
+    """, (annee,))
+    membres = cur.fetchall()
+    cur.close()
+    conn.close()
+    
+    return jsonify(membres)
+
+@app.route('/api/fete/payer', methods=['POST'])
+def api_fete_payer():
+    if session.get('user_role') != 'admin':
+        return jsonify({'success': False, 'message': 'Seul l\'admin peut enregistrer les paiements'})
+    
+    annee = datetime.now().year
+    data = request.json
+    id_membre = data['id_membre']
+    montant = data['montant']
+    
+    if not id_membre or not montant or montant <= 0:
+        return jsonify({'success': False, 'message': 'Montant invalide'})
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("SELECT * FROM fete_cotisation WHERE id_membre = %s AND annee = %s", (id_membre, annee))
+        existing = cur.fetchone()
+        
+        if existing:
+            nouveau_paye = existing['montant_paye'] + montant
+            nouveau_reste = 5000 - nouveau_paye
+            nouveau_statut = 'payé' if nouveau_paye >= 5000 else ('partiel' if nouveau_paye > 0 else 'impayé')
+            
+            cur.execute("""
+                UPDATE fete_cotisation 
+                SET montant_paye = %s, montant_restant = %s, statut = %s, date_dernier_paiement = NOW()
+                WHERE id_membre = %s AND annee = %s
+            """, (nouveau_paye, nouveau_reste, nouveau_statut, id_membre, annee))
+        else:
+            nouveau_reste = 5000 - montant
+            nouveau_statut = 'partiel' if montant < 5000 else 'payé'
+            cur.execute("""
+                INSERT INTO fete_cotisation (id_membre, annee, montant_total_du, montant_paye, montant_restant, statut, date_dernier_paiement)
+                VALUES (%s, %s, 5000, %s, %s, %s, NOW())
+            """, (id_membre, annee, montant, nouveau_reste, nouveau_statut))
+        
+        cur.execute("SELECT COALESCE(SUM(montant_paye), 0) as total FROM fete_cotisation WHERE annee = %s", (annee,))
+        total_collecte = cur.fetchone()['total']
+        
+        cur.execute("DELETE FROM fete_solde")
+        cur.execute("INSERT INTO fete_solde (solde) VALUES (%s)", (total_collecte,))
+        
+        motif = f"Cotisation fete de fin d annee {annee}"
+        cur.execute("""
+            INSERT INTO fete_caisse (type, montant, motif, source, solde_apres, effectue_par, id_membre)
+            VALUES ('entree', %s, %s, %s, %s, %s, %s)
+        """, (montant, motif, str(id_membre), total_collecte, session.get('user_nom', 'admin'), id_membre))
+        
+        conn.commit()
+        
+        cur.execute("SELECT montant_paye, montant_restant, statut FROM fete_cotisation WHERE id_membre = %s AND annee = %s", (id_membre, annee))
+        result = cur.fetchone()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'{montant} FCFA enregistre',
+            'montant_paye': result['montant_paye'],
+            'montant_restant': result['montant_restant'],
+            'statut': result['statut']
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/fete/rappel', methods=['POST'])
+def api_fete_rappel():
+    annee = datetime.now().year
+    data = request.json
+    id_membre = data.get('id_membre')
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT m.nom, m.telephone, COALESCE(f.montant_paye, 0) as paye, COALESCE(f.montant_restant, 5000) as reste
+        FROM membres m
+        LEFT JOIN fete_cotisation f ON m.id = f.id_membre AND f.annee = %s
+        WHERE m.id = %s
+    """, (annee, id_membre))
+    membre = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    if membre:
+        telephone = membre['telephone'].replace(' ', '').replace('+', '')
+        message = f"Bonjour {membre['nom']}, cotisation Fete de fin d annee {annee}: {membre['paye']} FCFA deja paye, reste {membre['reste']} FCFA. Date limite: 20 decembre. Merci!"
+        url = f"https://wa.me/{telephone}?text={message}"
+        return jsonify({'success': True, 'url': url})
+    
+    return jsonify({'success': False, 'message': 'Membre non trouve'})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -172,11 +172,11 @@
                         
                         if (m.montant_restant > 0) {
                             // Bouton rappel WhatsApp
+                            let annee = new Date().getFullYear();
                             let tel = String(m.telephone).replace(/\s/g, '').replace(/^0/, '228').replace('+', '');
-                            let message = `Bonjour ${m.nom}, Rappel de la cotisation Fête de fin d'année 2026: ${m.montant_paye} FCFA déjà payé, reste ${m.montant_restant} FCFA. Date limite: 20 décembre. Merci de régulariser pour participer à la fête. NB:La fête est obligatire pour tous!`;
+                            let message = `Bonjour ${m.nom}, Rappel de la cotisation Fête de fin d'année ${annee}: ${m.montant_paye} FCFA déjà payé, reste ${m.montant_restant} FCFA. Date limite: 20 décembre. Merci de régulariser pour participer à la fête. NB: La fête est obligatoire pour tous!`;
                             let waUrl = `https://wa.me/${tel}?text=${encodeURIComponent(message)}`;
-                            html += `<a href="${waUrl}" target="_blank" class="btn btn-wa btn-sm mb-1" title="Rappel WhatsApp"><i class="fab fa-whatsapp"></i></a>`;
-                        }
+    html += `<a href="${waUrl}" target="_blank" class="btn btn-wa btn-sm mb-1" title="Rappel WhatsApp"><i class="fab fa-whatsapp"></i></a>`;}
                         
                         if (userRole === 'admin' && m.montant_restant > 0) {
                             html += `<button class="btn btn-sm btn-fete ms-1 admin-only" onclick="ouvrirPaiement(${m.id}, '${m.nom}', ${m.montant_restant})">
